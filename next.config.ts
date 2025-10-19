@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Performance optimizations
+  experimental: {
+    optimizePackageImports: ['lucide-react', '@supabase/supabase-js'],
+  },
+  
   // Image optimization
   images: {
     domains: ['localhost'],
@@ -10,6 +15,10 @@ const nextConfig: NextConfig = {
         hostname: '**',
       },
     ],
+    formats: ['image/webp', 'image/avif'],
+    minimumCacheTTL: 60,
+    dangerouslyAllowSVG: true,
+    contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
   },
   
   // Security headers

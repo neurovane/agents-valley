@@ -1,8 +1,6 @@
 'use client'
 
-import React, { useState, useCallback } from 'react'
-import { createClient } from '@/lib/supabase-client'
-import { Agent, MCPServer } from '@/lib/supabase'
+import React, { useState, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -19,7 +17,8 @@ import {
   TrendingUp,
   AlertCircle
 } from 'lucide-react'
-import { useSupabaseData } from '@/hooks/useSupabaseData'
+import { useAgents } from '@/hooks/useAgents'
+import { useMCPServers } from '@/hooks/useMCPServers'
 import Link from 'next/link'
 import Image from 'next/image'
 
@@ -45,55 +44,17 @@ interface LeaderboardItem {
 
 export default function LeaderboardPage() {
   const [leaderboardType, setLeaderboardType] = useState<LeaderboardType>('agents')
-  const supabase = createClient()
 
-  const fetchAgents = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('agents')
-      .select(`
-        *,
-        publisher:profiles(*)
-      `)
-      .order('upvotes_count', { ascending: false })
+  const { data: agentsResponse, isLoading: agentsLoading, error: agentsError } = useAgents({
+    sortBy: 'popular',
+  })
 
-    return { data: data || [], error }
-  }, [supabase])
-
-  const fetchMCPServers = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('mcp_servers')
-      .select(`
-        *,
-        publisher:profiles(*)
-      `)
-      .order('upvotes_count', { ascending: false })
-
-    return { data: data || [], error }
-  }, [supabase])
-
-  const { data: agents, loading: agentsLoading, error: agentsError } = useSupabaseData<Agent[]>(
-    'leaderboard-agents',
-    fetchAgents,
-    [],
-    { 
-      retries: 3, 
-      retryDelay: 1000,
-      cacheTime: 5 * 60 * 1000, // 5 minutes
-      staleTime: 30 * 1000 // 30 seconds
-    }
-  )
-
-  const { data: mcpServers, loading: mcpLoading, error: mcpError } = useSupabaseData<MCPServer[]>(
-    'leaderboard-mcp-servers',
-    fetchMCPServers,
-    [],
-    { 
-      retries: 3, 
-      retryDelay: 1000,
-      cacheTime: 5 * 60 * 1000, // 5 minutes
-      staleTime: 30 * 1000 // 30 seconds
-    }
-  )
+  const { data: mcpResponse, isLoading: mcpLoading, error: mcpError } = useMCPServers({
+    sortBy: 'popular',
+  })
+  
+  const agents = Array.isArray(agentsResponse) ? agentsResponse : (agentsResponse?.data || [])
+  const mcpServers = Array.isArray(mcpResponse) ? mcpResponse : (mcpResponse?.data || [])
 
   const loading = agentsLoading || mcpLoading
 

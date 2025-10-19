@@ -3,14 +3,18 @@
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/contexts/AuthContext'
+import { useLoading } from '@/contexts/LoadingContext'
 import { AuthDialog } from '@/components/auth/AuthDialog'
 import { UserMenu } from '@/components/auth/UserMenu'
-import { Plus, Bot, Server, Home, Search, Menu, X, Trophy, CalendarDays } from 'lucide-react'
+import { ThemeToggle } from '@/components/ui/theme-toggle'
+import { Plus, Bot, Server, Home, Search, Menu, X, Trophy, CalendarDays, RefreshCw } from 'lucide-react'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
+import { clearSupabaseCache } from '@/hooks/useSupabaseData'
 
 export function Header() {
   const { user } = useAuth()
+  const { forceReset } = useLoading()
   const pathname = usePathname()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
@@ -24,8 +28,16 @@ export function Header() {
     setMobileMenuOpen(false)
   }
 
+  const handleEmergencyReset = () => {
+    // Clear all caches and reset loading states
+    clearSupabaseCache()
+    forceReset()
+    // Reload the page to ensure clean state
+    window.location.reload()
+  }
+
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60 shadow-sm">
+    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 shadow-sm">
       <div className="container mx-auto px-4">
         <div className="flex h-16 items-center justify-between">
           {/* Logo */}
@@ -33,11 +45,11 @@ export function Header() {
             <Link href="/" className="flex items-center space-x-2" onClick={closeMobileMenu}>
               <div className="flex items-center space-x-2">
                 {/* Logo Image */}
-                <div className="w-8 h-8 flex items-center justify-center">
+                <div className="w-10 h-10 flex items-center justify-center">
                   <img 
                     src="/logos/agentsvalley.png" 
                     alt="AgentsValley Logo" 
-                    className="h-8 w-auto object-contain"
+                    className="h-10 w-auto object-contain drop-shadow-sm"
                     onError={(e) => {
                       // Fallback to gradient logo if image fails to load
                       e.currentTarget.style.display = 'none'
@@ -47,15 +59,15 @@ export function Header() {
                       }
                     }}
                   />
-                  <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg flex items-center justify-center shadow-sm" style={{display: 'none'}}>
-                    <span className="text-white font-bold text-sm">AV</span>
+                  <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg flex items-center justify-center shadow-lg" style={{display: 'none'}}>
+                    <span className="text-white font-bold text-base">AV</span>
                   </div>
                 </div>
                 {/* Logo Text */}
-                <span className="font-bold text-xl bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent hidden sm:block">
+                <span className="font-bold text-2xl bg-gradient-to-r from-blue-700 to-purple-700 bg-clip-text text-transparent drop-shadow-sm hidden sm:block">
                   AgentsValley
                 </span>
-                <span className="font-bold text-lg bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent sm:hidden">
+                <span className="font-bold text-xl bg-gradient-to-r from-blue-700 to-purple-700 bg-clip-text text-transparent drop-shadow-sm sm:hidden">
                   AV
                 </span>
               </div>
@@ -133,6 +145,18 @@ export function Header() {
                 <Search className="h-4 w-4" />
               </Link>
             </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 w-9 p-0"
+              onClick={handleEmergencyReset}
+              title="Emergency Reset"
+            >
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+            
+            {/* Theme Toggle */}
+            <ThemeToggle />
             
             {/* Auth */}
             {user ? (
@@ -152,6 +176,7 @@ export function Header() {
 
           {/* Mobile menu button */}
           <div className="flex lg:hidden items-center space-x-2">
+            <ThemeToggle />
             {user && (
               <Button asChild variant="default" size="sm" className="h-9">
                 <Link href="/publish" className="flex items-center">
@@ -176,7 +201,7 @@ export function Header() {
 
         {/* Mobile Navigation */}
         {mobileMenuOpen && (
-          <div className="lg:hidden border-t bg-white/95 backdrop-blur">
+          <div className="lg:hidden border-t bg-background/95 backdrop-blur">
             <div className="px-2 pt-2 pb-3 space-y-1">
               {/* Mobile nav items */}
               <Button 

@@ -6,6 +6,7 @@ import { Loader2 } from 'lucide-react'
 export function GlobalLoading() {
   const { isLoading } = useLoading()
 
+  // Never show global overlay just because of tab switches; only for explicit operations
   if (!isLoading) return null
 
   return (
@@ -17,3 +18,5 @@ export function GlobalLoading() {
     </div>
   )
 }
+
+

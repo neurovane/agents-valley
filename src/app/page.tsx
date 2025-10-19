@@ -1,8 +1,5 @@
 'use client'
 
-import { useCallback } from 'react'
-import { createClient } from '@/lib/supabase-client'
-import { Agent, MCPServer } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -18,89 +15,38 @@ import {
   AlertCircle,
   CalendarDays
 } from 'lucide-react'
-import { useSupabaseData } from '@/hooks/useSupabaseData'
-import { Event } from '@/lib/supabase'
+import { useAgents } from '@/hooks/useAgents'
+import { useMCPServers } from '@/hooks/useMCPServers'
+import { useEvents } from '@/hooks/useEvents'
+import { Agent, MCPServer, Event } from '@/lib/supabase'
+import { Skeleton } from '@/components/ui/skeleton'
+import { OptimizedImage } from '@/components/ui/optimized-image'
 import Link from 'next/link'
 import Image from 'next/image'
 
 export default function HomePage() {
-  const supabase = createClient()
+  // Fetch trending agents
+  const { data: agentsData, isLoading: agentsLoading, error: agentsError } = useAgents({
+    sortBy: 'trending',
+    limit: 6,
+  })
 
-  const fetchTrendingAgents = useCallback(async () => {
-    const { data, error } = await supabase
-        .from('agents')
-        .select(`
-          *,
-          publisher:profiles(*)
-        `)
-      .order('upvotes_count', { ascending: false })
-      .limit(6)
+  // Fetch trending MCP servers
+  const { data: mcpData, isLoading: mcpLoading, error: mcpError } = useMCPServers({
+    sortBy: 'trending',
+    limit: 6,
+  })
 
-    return { data: data || [], error }
-  }, [supabase])
-
-  const fetchTrendingMCPs = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('mcp_servers')
-      .select(`
-        *,
-        publisher:profiles(*)
-      `)
-      .order('upvotes_count', { ascending: false })
-      .limit(6)
-
-    return { data: data || [], error }
-  }, [supabase])
-
-  const fetchUpcomingEvents = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('events')
-      .select(`
-        *,
-        organizer:profiles(*)
-      `)
-      .gte('start_date', new Date().toISOString())
-      .order('start_date', { ascending: true })
-      .limit(6)
-
-    return { data: data || [], error }
-  }, [supabase])
-
-  const { data: trendingAgents, loading: agentsLoading, error: agentsError } = useSupabaseData<Agent[]>(
-    'trending-agents',
-    fetchTrendingAgents,
-    [],
-    { 
-      retries: 3, 
-      retryDelay: 1000,
-      cacheTime: 5 * 60 * 1000, // 5 minutes
-      staleTime: 30 * 1000 // 30 seconds
-    }
-  )
-
-  const { data: trendingMCPs, loading: mcpLoading, error: mcpError } = useSupabaseData<MCPServer[]>(
-    'trending-mcp-servers',
-    fetchTrendingMCPs,
-    [],
-    { 
-      retries: 3, 
-      retryDelay: 1000,
-      cacheTime: 5 * 60 * 1000, // 5 minutes
-      staleTime: 30 * 1000 // 30 seconds
-    }
-  )
-
-  const { data: upcomingEvents, loading: eventsLoading, error: eventsError } = useSupabaseData<Event[]>(
-    'upcoming-events',
-    fetchUpcomingEvents,
-    [],
-    { 
-      retries: 3, 
-      retryDelay: 1000,
-      cacheTime: 5 * 60 * 1000, // 5 minutes
-      staleTime: 30 * 1000 // 30 seconds
-    }
-  )
+  // Fetch upcoming events
+  const { data: eventsData, isLoading: eventsLoading, error: eventsError } = useEvents({
+    sortBy: 'upcoming',
+    limit: 6,
+  })
+  
+  // When using limit, response is an array
+  const trendingAgents = (agentsData || []) as Agent[]
+  const trendingMCPs = (mcpData || []) as MCPServer[]
+  const upcomingEvents = (eventsData || []) as Event[]
 
   const loading = agentsLoading || mcpLoading || eventsLoading
 
@@ -114,31 +60,31 @@ export default function HomePage() {
           <div className="text-center max-w-4xl mx-auto">
             <div className="inline-flex items-center px-4 py-2 rounded-full bg-blue-100 text-blue-800 text-sm font-medium mb-6">
               <Sparkles className="w-4 h-4 mr-2" />
-              The Future of AI is Here
+                      The World&apos;s #1 AI Agents Platform
             </div>
             
             <h1 className="text-5xl md:text-7xl font-bold mb-6 leading-tight">
-              Discover Amazing{' '}
+              Build, Share & Discover{' '}
               <span className="bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
-                AI Tools
+                AI Agents
               </span>
             </h1>
             
             <p className="text-xl md:text-2xl text-gray-600 mb-8 leading-relaxed">
-              Explore, upvote, and share the best AI agents and MCP servers built by the community. 
-              Find your next productivity boost or creative inspiration.
+                      Join the world&apos;s largest community of AI developers. Discover cutting-edge AI agents,
+              build your own intelligent solutions, and shape the future of artificial intelligence.
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
               <Button asChild size="lg" className="h-12 px-8 text-lg">
                 <Link href="/publish" className="flex items-center">
                   <Plus className="h-5 w-5 mr-2" />
-                  Start Publishing
+                  Build Your AI Agent
                 </Link>
               </Button>
               <Button asChild variant="outline" size="lg" className="h-12 px-8 text-lg">
                 <Link href="#explore" className="flex items-center">
-                  Explore Now
+                  Discover AI Agents
                   <ArrowRight className="h-5 w-5 ml-2" />
                 </Link>
               </Button>
@@ -147,16 +93,16 @@ export default function HomePage() {
             {/* Stats */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-2xl mx-auto">
               <div className="text-center">
-                <div className="text-3xl font-bold text-blue-600">500+</div>
+                <div className="text-3xl font-bold text-blue-600">1,000+</div>
                 <div className="text-gray-600">AI Agents</div>
               </div>
               <div className="text-center">
-                <div className="text-3xl font-bold text-purple-600">200+</div>
-                <div className="text-gray-600">MCP Servers</div>
+                <div className="text-3xl font-bold text-purple-600">500+</div>
+                <div className="text-gray-600">AI Developers</div>
               </div>
               <div className="text-center">
-                <div className="text-3xl font-bold text-pink-600">10K+</div>
-                <div className="text-gray-600">Community</div>
+                <div className="text-3xl font-bold text-pink-600">50K+</div>
+                <div className="text-gray-600">AI Interactions</div>
               </div>
             </div>
           </div>
@@ -167,10 +113,10 @@ export default function HomePage() {
       <div className="container mx-auto px-4 py-16">
         <div className="text-center mb-12">
           <h2 className="text-3xl md:text-4xl font-bold mb-4">
-            Why Choose AgentsValley?
+            The Ultimate AI Agents Platform
           </h2>
           <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-            The most comprehensive platform for discovering and sharing AI tools
+            Everything you need to build, deploy, and discover cutting-edge AI agents
           </p>
         </div>
 
@@ -179,9 +125,9 @@ export default function HomePage() {
             <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <Bot className="w-8 h-8 text-blue-600" />
             </div>
-            <h3 className="text-xl font-semibold mb-2">AI Agents</h3>
+            <h3 className="text-xl font-semibold mb-2">Build AI Agents</h3>
             <p className="text-gray-600">
-              Discover intelligent agents that can help with productivity, creativity, and automation.
+              Create intelligent AI agents with our comprehensive platform. From simple chatbots to complex autonomous systems.
             </p>
           </Card>
 
@@ -189,9 +135,9 @@ export default function HomePage() {
             <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <Server className="w-8 h-8 text-purple-600" />
             </div>
-            <h3 className="text-xl font-semibold mb-2">MCP Servers</h3>
+            <h3 className="text-xl font-semibold mb-2">Deploy & Scale</h3>
             <p className="text-gray-600">
-              Connect to powerful MCP servers that extend AI capabilities and integrations.
+              Deploy your AI agents instantly with our powerful infrastructure. Scale from prototype to production seamlessly.
             </p>
           </Card>
 
@@ -199,9 +145,9 @@ export default function HomePage() {
             <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <Users className="w-8 h-8 text-green-600" />
             </div>
-            <h3 className="text-xl font-semibold mb-2">Community</h3>
+            <h3 className="text-xl font-semibold mb-2">AI Community</h3>
             <p className="text-gray-600">
-              Join a vibrant community of developers, creators, and AI enthusiasts.
+                      Join the world&apos;s largest community of AI developers. Share knowledge, collaborate, and build the future together.
             </p>
           </Card>
                 </div>
@@ -211,8 +157,8 @@ export default function HomePage() {
       <div id="explore" className="container mx-auto px-4 py-16">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h2 className="text-3xl font-bold mb-2">Trending AI Agents</h2>
-            <p className="text-gray-600">The most popular agents this week</p>
+            <h2 className="text-3xl font-bold mb-2">Featured AI Agents</h2>
+            <p className="text-gray-600">Discover the most innovative and powerful AI agents created by our community</p>
                     </div>
           <Button asChild variant="outline">
             <Link href="/agents" className="flex items-center">
@@ -239,7 +185,7 @@ export default function HomePage() {
                 </div>
                 <h3 className="text-xl font-semibold mb-2">Failed to load agents</h3>
                 <p className="text-muted-foreground mb-6">
-                  {agentsError.message || 'Something went wrong while loading agents'}
+                  {agentsError instanceof Error ? agentsError.message : 'Something went wrong while loading agents'}
                 </p>
               </div>
             </CardContent>
@@ -321,8 +267,8 @@ export default function HomePage() {
       <div className="container mx-auto px-4 py-16">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h2 className="text-3xl font-bold mb-2">Trending MCP Servers</h2>
-            <p className="text-gray-600">The most popular MCP servers this week</p>
+            <h2 className="text-3xl font-bold mb-2">AI Agent Integrations</h2>
+            <p className="text-gray-600">Powerful MCP servers and integrations to enhance your AI agents</p>
           </div>
           <Button asChild variant="outline">
             <Link href="/mcp-servers" className="flex items-center">
@@ -332,15 +278,23 @@ export default function HomePage() {
           </Button>
         </div>
 
-        {loading ? (
+        {agentsLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[1, 2, 3, 4, 5, 6].map((i) => (
-              <div key={i} className="animate-pulse">
-                <div className="h-48 bg-gray-200 rounded-lg"></div>
-              </div>
+              <Card key={i}>
+                <CardContent className="p-6">
+                  <Skeleton className="h-32 w-full mb-4" />
+                  <Skeleton className="h-4 w-3/4 mb-2" />
+                  <Skeleton className="h-3 w-full mb-4" />
+                  <div className="flex justify-between items-center">
+                    <Skeleton className="h-6 w-16" />
+                    <Skeleton className="h-4 w-8" />
+                  </div>
+                </CardContent>
+              </Card>
             ))}
           </div>
-        ) : mcpError ? (
+        ) : agentsError ? (
           <Card>
             <CardContent className="pt-6">
               <div className="text-center py-12">
@@ -349,7 +303,7 @@ export default function HomePage() {
                 </div>
                 <h3 className="text-xl font-semibold mb-2">Failed to load MCP servers</h3>
                 <p className="text-muted-foreground mb-6">
-                  {mcpError.message || 'Something went wrong while loading MCP servers'}
+                  {mcpError instanceof Error ? mcpError.message : 'Something went wrong while loading MCP servers'}
                 </p>
               </div>
             </CardContent>
@@ -432,8 +386,8 @@ export default function HomePage() {
       <div className="container mx-auto px-4 py-16">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h2 className="text-3xl font-bold mb-2">Upcoming Events</h2>
-            <p className="text-gray-600">Join exciting AI and tech events in your community</p>
+            <h2 className="text-3xl font-bold mb-2">AI Developer Events</h2>
+            <p className="text-gray-600">Join workshops, hackathons, and conferences focused on AI agent development</p>
           </div>
           <Button asChild variant="outline">
             <Link href="/events" className="flex items-center">
@@ -460,7 +414,7 @@ export default function HomePage() {
                 </div>
                 <h3 className="text-xl font-semibold mb-2">Failed to load events</h3>
                 <p className="text-muted-foreground mb-6">
-                  {eventsError.message || 'Something went wrong while loading events'}
+                  {eventsError instanceof Error ? eventsError.message : 'Something went wrong while loading events'}
                 </p>
               </div>
             </CardContent>
@@ -545,21 +499,21 @@ export default function HomePage() {
         <div className="container mx-auto px-4 py-16">
           <div className="text-center max-w-3xl mx-auto">
             <h2 className="text-3xl md:text-4xl font-bold mb-4">
-              Ready to Share Your AI Creation?
+              Ready to Build the Future of AI?
             </h2>
             <p className="text-xl mb-8 opacity-90">
-              Join thousands of developers and creators sharing their AI agents, MCP servers, and events with the world.
+                      Join the world&apos;s leading AI agents platform. Build, deploy, and share your intelligent agents with millions of developers worldwide.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Button asChild size="lg" variant="secondary" className="h-12 px-8 text-lg">
                 <Link href="/publish" className="flex items-center">
                   <Plus className="h-5 w-5 mr-2" />
-                  Publish Now
+                  Build AI Agent
                 </Link>
               </Button>
               <Button asChild size="lg" variant="outline" className="h-12 px-8 text-lg border-white text-white hover:bg-white hover:text-blue-600">
-                <Link href="/events" className="flex items-center">
-                  Explore Events
+                <Link href="/agents" className="flex items-center">
+                  Explore AI Agents
                   <ArrowRight className="h-5 w-5 ml-2" />
                 </Link>
               </Button>

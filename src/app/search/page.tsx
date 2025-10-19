@@ -3,6 +3,8 @@
 import { useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase-client'
 import { Agent, MCPServer } from '@/lib/supabase'
+import { useSearchAgents } from '@/hooks/useAgents'
+import { useSearchMCPServers } from '@/hooks/useMCPServers'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -49,11 +51,19 @@ export default function SearchPage() {
   const [selectedCategory, setSelectedCategory] = useState('All')
   const [sortBy, setSortBy] = useState<SortOption>('trending')
   const [searchType, setSearchType] = useState<SearchType>('all')
-  const [agents, setAgents] = useState<Agent[]>([])
-  const [mcpServers, setMcpServers] = useState<MCPServer[]>([])
   const [loading, setLoading] = useState(false)
   const [hasSearched, setHasSearched] = useState(false)
   const supabase = createClient()
+
+  const { data: agents, isLoading: agentsLoading, error: agentsError } = useSearchAgents(
+    searchQuery,
+    { sortBy, category: selectedCategory }
+  )
+
+  const { data: mcpServers, isLoading: mcpLoading, error: mcpError } = useSearchMCPServers(
+    searchQuery,
+    { sortBy, category: selectedCategory }
+  )
 
   const search = useCallback(async () => {
     if (!searchQuery.trim()) {
@@ -61,84 +71,8 @@ export default function SearchPage() {
       return
     }
 
-    setLoading(true)
     setHasSearched(true)
-
-    try {
-      if (searchType === 'all' || searchType === 'agents') {
-        let query = supabase
-          .from('agents')
-          .select(`
-            *,
-            publisher:profiles(*)
-          `)
-          .or(`name.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%,tags.cs.{${searchQuery}}`)
-
-        if (selectedCategory !== 'All') {
-          query = query.eq('category', selectedCategory)
-        }
-
-        switch (sortBy) {
-          case 'trending':
-            query = query.order('upvotes_count', { ascending: false })
-            break
-          case 'newest':
-            query = query.order('created_at', { ascending: false })
-            break
-          case 'popular':
-            query = query.order('upvotes_count', { ascending: false })
-            break
-        }
-
-        const { data: agentsData, error: agentsError } = await query
-
-        if (agentsError) {
-          console.error('Error searching agents:', agentsError)
-        } else {
-          setAgents(agentsData || [])
-        }
-      }
-
-      if (searchType === 'all' || searchType === 'mcp') {
-        let query = supabase
-          .from('mcp_servers')
-          .select(`
-            *,
-            publisher:profiles(*)
-          `)
-          .or(`name.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%,tags.cs.{${searchQuery}}`)
-
-        if (selectedCategory !== 'All') {
-          query = query.eq('category', selectedCategory)
-        }
-
-        switch (sortBy) {
-          case 'trending':
-            query = query.order('upvotes_count', { ascending: false })
-            break
-          case 'newest':
-            query = query.order('created_at', { ascending: false })
-            break
-          case 'popular':
-            query = query.order('upvotes_count', { ascending: false })
-            break
-        }
-
-        const { data: mcpData, error: mcpError } = await query
-
-        if (mcpError) {
-          console.error('Error searching MCP servers:', mcpError)
-        } else {
-          setMcpServers(mcpData || [])
-        }
-      }
-    } catch (error: unknown) {
-      console.error('Search error:', error)
-      toast.error('Search failed. Please try again.')
-    } finally {
-      setLoading(false)
-    }
-  }, [supabase, searchQuery, selectedCategory, sortBy, searchType])
+  }, [searchQuery])
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
@@ -148,8 +82,6 @@ export default function SearchPage() {
 
   const clearSearch = () => {
     setSearchQuery('')
-    setAgents([])
-    setMcpServers([])
     setHasSearched(false)
   }
 
@@ -165,7 +97,7 @@ export default function SearchPage() {
     return date.toLocaleDateString()
   }
 
-  const totalResults = agents.length + mcpServers.length
+  const totalResults = (agents?.length || 0) + (mcpServers?.length || 0)
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50">
@@ -276,9 +208,9 @@ export default function SearchPage() {
           {hasSearched && (
             <div className="mb-6">
               <h2 className="text-xl font-semibold">
-                {loading ? 'Searching...' : `${totalResults} result${totalResults !== 1 ? 's' : ''} found`}
+                {agentsLoading || mcpLoading ? 'Searching...' : `${totalResults} result${totalResults !== 1 ? 's' : ''} found`}
               </h2>
-              {!loading && totalResults > 0 && (
+              {!agentsLoading && !mcpLoading && totalResults > 0 && (
                 <p className="text-gray-600">
                   Results for &quot;{searchQuery}&quot; {selectedCategory !== 'All' && `in ${selectedCategory}`}
                 </p>
@@ -294,7 +226,7 @@ export default function SearchPage() {
                 Enter keywords to find AI agents and MCP servers
               </p>
             </div>
-          ) : loading ? (
+          ) : agentsLoading || mcpLoading ? (
             <div className="space-y-4">
               {[1, 2, 3, 4].map((i) => (
                 <div key={i} className="animate-pulse">
@@ -321,17 +253,17 @@ export default function SearchPage() {
                 </TabsTrigger>
                 <TabsTrigger value="agents" className="flex items-center">
                   <Bot className="h-4 w-4 mr-2" />
-                  Agents ({agents.length})
+                  Agents ({agents?.length || 0})
                 </TabsTrigger>
                 <TabsTrigger value="mcp" className="flex items-center">
                   <Server className="h-4 w-4 mr-2" />
-                  MCP Servers ({mcpServers.length})
+                  MCP Servers ({mcpServers?.length || 0})
                 </TabsTrigger>
               </TabsList>
 
               <TabsContent value="all" className="space-y-4">
                 {/* AI Agents */}
-                {agents.length > 0 && (
+                {agents && agents.length > 0 && (
                   <div className="mb-8">
                     <h3 className="text-lg font-semibold mb-4 flex items-center">
                       <Bot className="h-5 w-5 mr-2" />
@@ -404,7 +336,7 @@ export default function SearchPage() {
                 )}
 
                 {/* MCP Servers */}
-                {mcpServers.length > 0 && (
+                {mcpServers && mcpServers.length > 0 && (
                   <div>
                     <h3 className="text-lg font-semibold mb-4 flex items-center">
                       <Server className="h-5 w-5 mr-2" />
@@ -478,7 +410,7 @@ export default function SearchPage() {
               </TabsContent>
 
               <TabsContent value="agents" className="space-y-4">
-                {agents.length === 0 ? (
+                {!agents || agents.length === 0 ? (
                   <div className="text-center py-16">
                     <Bot className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                     <h3 className="text-xl font-semibold text-gray-600 mb-2">No AI agents found</h3>
@@ -550,7 +482,7 @@ export default function SearchPage() {
               </TabsContent>
 
               <TabsContent value="mcp" className="space-y-4">
-                {mcpServers.length === 0 ? (
+                {!mcpServers || mcpServers.length === 0 ? (
                   <div className="text-center py-16">
                     <Server className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                     <h3 className="text-xl font-semibold text-gray-600 mb-2">No MCP servers found</h3>

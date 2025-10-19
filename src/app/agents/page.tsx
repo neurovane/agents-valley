@@ -1,18 +1,14 @@
 'use client'
 
-import { useState, useCallback } from 'react'
-import { createClient } from '@/lib/supabase-client'
-import { Agent } from '@/lib/supabase'
+import { useState } from 'react'
 import { AgentCard } from '@/components/agents/AgentCard'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Search, TrendingUp, Clock, Star, Plus, Bot, AlertCircle } from 'lucide-react'
-import { useSupabaseData } from '@/hooks/useSupabaseData'
+import { useAgents, SortOption } from '@/hooks/useAgents'
 import Link from 'next/link'
-
-type SortOption = 'trending' | 'newest' | 'popular'
 
 const CATEGORIES = [
   'All',
@@ -33,59 +29,24 @@ export default function AgentsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('All')
   const [sortBy, setSortBy] = useState<SortOption>('trending')
-  const supabase = createClient()
 
-  const fetchAgents = useCallback(async () => {
-    let query = supabase
-      .from('agents')
-      .select(`
-        *,
-        publisher:profiles(*)
-      `)
+  const { data: agentsResponse, isLoading: loading, error } = useAgents({
+    sortBy,
+    category: selectedCategory,
+  })
 
-    // Apply category filter
-    if (selectedCategory !== 'All') {
-      query = query.eq('category', selectedCategory)
-    }
+  const agents = Array.isArray(agentsResponse) ? agentsResponse : (agentsResponse?.data || [])
 
-    // Apply search filter
-    if (searchQuery) {
-      query = query.or(`name.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`)
-    }
+  // Filter agents client-side by search query
+  const filteredAgents = agents.filter(agent => {
+    if (!searchQuery) return true
+    const search = searchQuery.toLowerCase()
+    return (
+      agent.name.toLowerCase().includes(search) ||
+      agent.description.toLowerCase().includes(search)
+    )
+  })
 
-    // Apply sorting
-    switch (sortBy) {
-      case 'trending':
-        query = query.order('upvotes_count', { ascending: false })
-        break
-      case 'newest':
-        query = query.order('created_at', { ascending: false })
-        break
-      case 'popular':
-        query = query.order('upvotes_count', { ascending: false })
-        break
-    }
-
-    const { data, error } = await query
-    return { data: data || [], error }
-  }, [supabase, selectedCategory, searchQuery, sortBy])
-
-  const { data: agents, loading, error, refetch } = useSupabaseData<Agent[]>(
-    `agents-${selectedCategory}-${searchQuery}-${sortBy}`,
-    fetchAgents,
-    [selectedCategory, searchQuery, sortBy],
-    { 
-      retries: 3, 
-      retryDelay: 1000,
-      cacheTime: 5 * 60 * 1000, // 5 minutes
-      staleTime: 30 * 1000 // 30 seconds
-    }
-  )
-
-  const handleUpvote = () => {
-    // Refresh agents to update upvote counts
-    refetch()
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50">
@@ -204,13 +165,13 @@ export default function AgentsPage() {
                 <p className="text-muted-foreground mb-6">
                   {error.message || 'Something went wrong while loading agents'}
                 </p>
-                <Button onClick={refetch} variant="outline">
+                <Button onClick={() => window.location.reload()} variant="outline">
                   Try Again
                 </Button>
               </div>
             </CardContent>
           </Card>
-        ) : !agents || agents.length === 0 ? (
+        ) : !filteredAgents || filteredAgents.length === 0 ? (
           <Card>
             <CardContent className="pt-6">
               <div className="text-center py-12">
@@ -233,16 +194,15 @@ export default function AgentsPage() {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-2xl font-semibold">
-                {agents.length} AI Agent{agents.length !== 1 ? 's' : ''} Found
+                {filteredAgents.length} AI Agent{filteredAgents.length !== 1 ? 's' : ''} Found
               </h2>
             </div>
             
             <div className="grid gap-4">
-              {agents.map((agent) => (
+              {filteredAgents.map((agent) => (
                 <AgentCard
                   key={agent.id}
                   agent={agent}
-                  onUpvote={handleUpvote}
                 />
               ))}
             </div>

@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useAuth } from '@/contexts/AuthContext'
+import { useLoading } from '@/contexts/LoadingContext'
 
 interface UseSupabaseDataOptions {
   retries?: number
@@ -33,6 +35,8 @@ export function useSupabaseData<T>(
     enabled = true 
   } = options
 
+  const { user } = useAuth()
+  const { hasInitialData: globalHasInitialData, setHasInitialData } = useLoading()
   const [data, setData] = useState<T | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
@@ -41,6 +45,10 @@ export function useSupabaseData<T>(
   const mountedRef = useRef(true)
   const retryCountRef = useRef(0)
   const abortControllerRef = useRef<AbortController | null>(null)
+  const lastUserRef = useRef<string | null>(null)
+  const hasInitialDataRef = useRef(false)
+  const isVisibleRef = useRef(true)
+  const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const executeQuery = useCallback(async (forceRefresh = false) => {
     if (!enabled) return
@@ -58,6 +66,7 @@ export function useSupabaseData<T>(
         setLoading(false)
         setError(null)
         setIsStale(isStaleData)
+        hasInitialDataRef.current = true
         
         // If data is stale, refetch in background
         if (isStaleData) {
@@ -67,7 +76,21 @@ export function useSupabaseData<T>(
       }
     }
 
-    setLoading(true)
+    // Only show loading if we don't have any data yet (locally or globally)
+    if (!hasInitialDataRef.current && !globalHasInitialData) {
+      setLoading(true)
+      
+      // Set a timeout to prevent infinite loading
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current)
+      }
+      loadingTimeoutRef.current = setTimeout(() => {
+        if (mountedRef.current) {
+          console.warn(`Query timeout for ${queryKey}, forcing loading to false`)
+          setLoading(false)
+        }
+      }, 10000) // 10 second timeout
+    }
     setError(null)
 
     // Cancel previous request
@@ -98,7 +121,16 @@ export function useSupabaseData<T>(
       setData(result.data)
       setError(null)
       setIsStale(false)
+      setLoading(false)
       retryCountRef.current = 0
+      hasInitialDataRef.current = true
+      setHasInitialData(true) // Set global flag
+      
+      // Clear loading timeout
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current)
+        loadingTimeoutRef.current = null
+      }
 
       // Cache the result
       cache.set(queryKey, {
@@ -127,10 +159,26 @@ export function useSupabaseData<T>(
         console.error('Query failed after all retries:', error)
         setError(error)
         setData(null)
+        setLoading(false)
+        
+        // Clear loading timeout
+        if (loadingTimeoutRef.current) {
+          clearTimeout(loadingTimeoutRef.current)
+          loadingTimeoutRef.current = null
+        }
       }
     } finally {
       if (mountedRef.current) {
-        setLoading(false)
+        // Only set loading to false if we don't have initial data (locally or globally)
+        if (!hasInitialDataRef.current && !globalHasInitialData) {
+          setLoading(false)
+        }
+        
+        // Clear loading timeout
+        if (loadingTimeoutRef.current) {
+          clearTimeout(loadingTimeoutRef.current)
+          loadingTimeoutRef.current = null
+        }
       }
     }
   }, [queryFn, enabled, retries, retryDelay, cacheTime, staleTime, queryKey])
@@ -142,17 +190,62 @@ export function useSupabaseData<T>(
 
   useEffect(() => {
     mountedRef.current = true
+    
+    // Handle page visibility changes
+    const handleVisibilityChange = () => {
+      isVisibleRef.current = !document.hidden
+      
+      // If page becomes visible and we have stale data, refetch
+      if (isVisibleRef.current && isStale) {
+        executeQuery(true)
+      }
+    }
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    // Prevent showing global loading on visibility changes if we already have data
+    // This avoids perceived "stuck loading" when switching tabs
+    if (hasInitialDataRef.current || globalHasInitialData) {
+      setLoading(false)
+    }
+    
     return () => {
       mountedRef.current = false
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
       if (abortControllerRef.current) {
         abortControllerRef.current.abort()
       }
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current)
+        loadingTimeoutRef.current = null
+      }
     }
-  }, [])
+  }, [executeQuery, isStale, globalHasInitialData])
 
   useEffect(() => {
     executeQuery()
   }, [executeQuery, ...dependencies]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Handle auth state changes
+  useEffect(() => {
+    const currentUserId = user?.id || null
+    
+    // If user changed, clear cache and refetch
+    if (lastUserRef.current !== currentUserId) {
+      lastUserRef.current = currentUserId
+      hasInitialDataRef.current = false // Reset initial data flag
+      setHasInitialData(false) // Reset global flag
+      
+      // Clear any pending timeouts
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current)
+        loadingTimeoutRef.current = null
+      }
+      
+      clearSupabaseCache(queryKey)
+      executeQuery(true)
+    }
+  }, [user?.id, queryKey, executeQuery])
 
   // Clean up old cache entries periodically
   useEffect(() => {
@@ -195,5 +288,19 @@ export function invalidateSupabaseCache(queryKey: string) {
       ...cached,
       timestamp: 0 // Force refresh
     })
+  }
+}
+
+// Utility function to create cache key with user context
+export function createCacheKey(baseKey: string, userId?: string | null): string {
+  return userId ? `${baseKey}:user:${userId}` : `${baseKey}:anonymous`
+}
+
+// Utility function to clear cache by pattern
+export function clearSupabaseCacheByPattern(pattern: string) {
+  for (const [key] of cache.entries()) {
+    if (key.includes(pattern)) {
+      cache.delete(key)
+    }
   }
 }

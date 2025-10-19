@@ -1,8 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
 import { createClient } from '@/lib/supabase-client'
-import { MCPServer } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -13,9 +12,9 @@ import { Search, TrendingUp, Clock, Star, Plus, Server, ChevronUp, ExternalLink,
 import Link from 'next/link'
 import Image from 'next/image'
 import { useAuth } from '@/contexts/AuthContext'
+import { useMCPServers, useUpvoteMCP, useMCPUpvoteStatus, SortOption } from '@/hooks/useMCPServers'
 import { toast } from 'sonner'
-
-type SortOption = 'trending' | 'newest' | 'popular'
+import { handleError } from '@/lib/error-handler'
 
 const CATEGORIES = [
   'All',
@@ -33,65 +32,29 @@ const CATEGORIES = [
 ]
 
 export default function MCPServersPage() {
-  const [mcpServers, setMcpServers] = useState<MCPServer[]>([])
-  const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('All')
   const [sortBy, setSortBy] = useState<SortOption>('trending')
-  const supabase = createClient()
   const { user } = useAuth()
+  const upvoteMutation = useUpvoteMCP()
+  const supabase = createClient()
 
-  const fetchMCPServers = useCallback(async () => {
-    setLoading(true)
-    
-    try {
-      let query = supabase
-        .from('mcp_servers')
-        .select(`
-          *,
-          publisher:profiles(*)
-        `)
+  const { data: mcpResponse, isLoading: loading, error } = useMCPServers({
+    sortBy,
+    category: selectedCategory,
+  })
+  
+  const mcpServers = Array.isArray(mcpResponse) ? mcpResponse : (mcpResponse?.data || [])
 
-      // Apply category filter
-      if (selectedCategory !== 'All') {
-        query = query.eq('category', selectedCategory)
-      }
-
-      // Apply search filter
-      if (searchQuery) {
-        query = query.or(`name.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`)
-      }
-
-      // Apply sorting
-      switch (sortBy) {
-        case 'trending':
-          query = query.order('upvotes_count', { ascending: false })
-          break
-        case 'newest':
-          query = query.order('created_at', { ascending: false })
-          break
-        case 'popular':
-          query = query.order('upvotes_count', { ascending: false })
-          break
-      }
-
-      const { data, error } = await query
-
-      if (error) {
-        console.error('Error fetching MCP servers:', error)
-      } else {
-        setMcpServers(data || [])
-      }
-    } catch (error) {
-      console.error('Error:', error)
-    } finally {
-      setLoading(false)
-    }
-  }, [supabase, selectedCategory, searchQuery, sortBy])
-
-  useEffect(() => {
-    fetchMCPServers()
-  }, [fetchMCPServers])
+  // Filter MCP servers client-side by search query
+  const filteredServers = mcpServers.filter(server => {
+    if (!searchQuery) return true
+    const search = searchQuery.toLowerCase()
+    return (
+      server.name.toLowerCase().includes(search) ||
+      server.description.toLowerCase().includes(search)
+    )
+  })
 
   const handleUpvote = async (mcpServerId: string) => {
     if (!user) {
@@ -129,11 +92,10 @@ export default function MCPServersPage() {
         toast.success('Upvoted!')
       }
 
-      // Refresh data
-      fetchMCPServers()
+      // Data will auto-refresh via React Query mutation
     } catch (error: unknown) {
-      console.error('Error toggling upvote:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to upvote')
+      const errorMessage = handleError(error, 'Error toggling upvote', 'Failed to upvote')
+      toast.error(errorMessage)
     }
   }
 
@@ -255,7 +217,7 @@ export default function MCPServersPage() {
               </div>
             ))}
           </div>
-        ) : mcpServers.length === 0 ? (
+        ) : !filteredServers || filteredServers.length === 0 ? (
           <Card>
             <CardContent className="pt-6">
               <div className="text-center py-12">
@@ -278,12 +240,12 @@ export default function MCPServersPage() {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-2xl font-semibold">
-                {mcpServers.length} MCP Server{mcpServers.length !== 1 ? 's' : ''} Found
+                {filteredServers.length} MCP Server{filteredServers.length !== 1 ? 's' : ''} Found
               </h2>
             </div>
             
             <div className="grid gap-4">
-              {mcpServers.map((mcpServer) => (
+              {filteredServers.map((mcpServer) => (
                 <Card key={mcpServer.id} className="group hover:shadow-lg transition-all duration-200 cursor-pointer">
                   <Link href={`/mcp-servers/${mcpServer.id}`}>
                     <CardContent className="p-6">
