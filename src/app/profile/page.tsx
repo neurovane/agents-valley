@@ -3,48 +3,46 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { createClient } from '@/lib/supabase-client'
-import { Profile, Agent } from '@/lib/supabase'
+import { Profile } from '@/lib/supabase'
+import { useUserAgents, useDeleteAgent } from '@/hooks/useAgents'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { toast } from 'sonner'
-import { User, Mail, Calendar, Edit3, Save, X } from 'lucide-react'
+import { handleError } from '@/lib/error-handler'
+import { User, Mail, Calendar, Edit3, Save, X, Edit, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 
 export default function ProfilePage() {
   const { user, profile, loading } = useAuth()
   const [isEditing, setIsEditing] = useState(false)
   const [editProfile, setEditProfile] = useState<Partial<Profile>>({})
-  const [userAgents, setUserAgents] = useState<Agent[]>([])
-  const [agentsLoading, setAgentsLoading] = useState(true)
   const supabase = createClient()
+
+  const { data: userAgents, isLoading: agentsLoading, error: agentsError } = useUserAgents(user?.id)
+  const deleteAgentMutation = useDeleteAgent()
 
   useEffect(() => {
     if (profile) {
       setEditProfile(profile)
-      fetchUserAgents()
     }
   }, [profile])
 
-  const fetchUserAgents = async () => {
-    if (!user) return
-    
-    const { data, error } = await supabase
-      .from('agents')
-      .select(`
-        *,
-        publisher:profiles(*)
-      `)
-      .eq('publisher_id', user.id)
-      .order('created_at', { ascending: false })
-
-    if (error) {
-      console.error('Error fetching user agents:', error)
-    } else {
-      setUserAgents(data || [])
+  const handleDeleteAgent = async (agentId: string, agentName: string) => {
+    if (!confirm(`Are you sure you want to delete "${agentName}"? This action cannot be undone.`)) {
+      return
     }
-    setAgentsLoading(false)
+
+    deleteAgentMutation.mutate(agentId, {
+      onSuccess: () => {
+        toast.success('Agent deleted successfully')
+      },
+      onError: (error) => {
+        const errorMessage = handleError(error, 'Error deleting agent', 'Failed to delete agent')
+        toast.error(errorMessage)
+      },
+    })
   }
 
   const handleSaveProfile = async () => {
@@ -179,7 +177,7 @@ export default function ProfilePage() {
         <CardHeader>
           <CardTitle className="flex items-center">
             <User className="h-5 w-5 mr-2" />
-            My Agents ({userAgents.length})
+            My Agents ({userAgents?.length || 0})
           </CardTitle>
           <CardDescription>
             Agents you&apos;ve published on AgentsValley
@@ -194,7 +192,7 @@ export default function ProfilePage() {
                 </div>
               ))}
             </div>
-          ) : userAgents.length === 0 ? (
+          ) : !userAgents || userAgents.length === 0 ? (
             <div className="text-center py-8">
               <p className="text-muted-foreground mb-4">
                 You haven&apos;t published any agents yet.
@@ -225,9 +223,27 @@ export default function ProfilePage() {
                           <span className="text-xs text-muted-foreground">
                             {agent.upvotes_count} upvotes
                           </span>
-                          <Button asChild size="sm" variant="outline">
-                            <Link href={`/agents/${agent.id}`}>View</Link>
-                          </Button>
+                          <div className="flex gap-1">
+                            <Button asChild size="sm" variant="outline">
+                              <Link href={`/agents/${agent.id}`}>View</Link>
+                            </Button>
+                            <Button asChild size="sm" variant="ghost">
+                              <Link href={`/agents/${agent.id}/edit`}>
+                                <Edit className="h-3 w-3" />
+                              </Link>
+                            </Button>
+                            <Button 
+                              size="sm" 
+                              variant="ghost"
+                              onClick={(e) => {
+                                e.preventDefault()
+                                handleDeleteAgent(agent.id, agent.name)
+                              }}
+                              disabled={deleteAgentMutation.isPending}
+                            >
+                              <Trash2 className="h-3 w-3 text-red-600" />
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     </div>

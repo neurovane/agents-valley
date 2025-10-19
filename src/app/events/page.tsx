@@ -1,8 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
-import { createClient } from '@/lib/supabase-client'
-import { Event } from '@/lib/supabase'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -10,11 +8,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Search, Calendar, MapPin, Users, Clock, Plus, CalendarDays, AlertCircle } from 'lucide-react'
-import { useSupabaseData } from '@/hooks/useSupabaseData'
+import { useEvents } from '@/hooks/useEvents'
 import Link from 'next/link'
 import Image from 'next/image'
 
-type SortOption = 'upcoming' | 'newest' | 'featured'
+type SortOption = 'upcoming' | 'newest' | 'popular'
 
 const CATEGORIES = [
   'All',
@@ -41,64 +39,25 @@ export default function EventsPage() {
   const [selectedCategory, setSelectedCategory] = useState('All')
   const [selectedEventType, setSelectedEventType] = useState('All')
   const [sortBy, setSortBy] = useState<SortOption>('upcoming')
-  const supabase = createClient()
 
-  const fetchEvents = useCallback(async () => {
-    let query = supabase
-      .from('events')
-      .select(`
-        *,
-        organizer:profiles(*)
-      `)
+  const { data: eventsResponse, isLoading: loading, error } = useEvents({
+    sortBy,
+    eventType: selectedEventType === 'All' ? undefined : selectedEventType.toLowerCase(),
+    category: selectedCategory,
+  })
+  
+  const events = Array.isArray(eventsResponse) ? eventsResponse : (eventsResponse?.data || [])
 
-    // Apply category filter
-    if (selectedCategory !== 'All') {
-      query = query.eq('category', selectedCategory)
-    }
+  // Filter events client-side by search query
+  const filteredEvents = events.filter(event => {
+    if (!searchQuery) return true
+    const search = searchQuery.toLowerCase()
+    return (
+      event.title.toLowerCase().includes(search) ||
+      event.description.toLowerCase().includes(search)
+    )
+  })
 
-    // Apply event type filter
-    if (selectedEventType !== 'All') {
-      const eventTypeMap: Record<string, string> = {
-        'Online': 'online',
-        'In-Person': 'in-person',
-        'Hybrid': 'hybrid'
-      }
-      query = query.eq('event_type', eventTypeMap[selectedEventType])
-    }
-
-    // Apply search filter
-    if (searchQuery) {
-      query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`)
-    }
-
-    // Apply sorting
-    switch (sortBy) {
-      case 'upcoming':
-        query = query.gte('start_date', new Date().toISOString()).order('start_date', { ascending: true })
-        break
-      case 'newest':
-        query = query.order('created_at', { ascending: false })
-        break
-      case 'featured':
-        query = query.eq('is_featured', true).order('start_date', { ascending: true })
-        break
-    }
-
-    const { data, error } = await query
-    return { data: data || [], error }
-  }, [supabase, selectedCategory, selectedEventType, searchQuery, sortBy])
-
-  const { data: events, loading, error, refetch } = useSupabaseData<Event[]>(
-    `events-${selectedCategory}-${selectedEventType}-${searchQuery}-${sortBy}`,
-    fetchEvents,
-    [selectedCategory, selectedEventType, searchQuery, sortBy],
-    { 
-      retries: 3, 
-      retryDelay: 1000,
-      cacheTime: 5 * 60 * 1000, // 5 minutes
-      staleTime: 30 * 1000 // 30 seconds
-    }
-  )
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
@@ -270,13 +229,13 @@ export default function EventsPage() {
                 <p className="text-muted-foreground mb-6">
                   {error.message || 'Something went wrong while loading events'}
                 </p>
-                <Button onClick={refetch} variant="outline">
+                <Button onClick={() => window.location.reload()} variant="outline">
                   Try Again
                 </Button>
               </div>
             </CardContent>
           </Card>
-        ) : !events || events.length === 0 ? (
+        ) : !filteredEvents || filteredEvents.length === 0 ? (
           <Card>
             <CardContent className="pt-6">
               <div className="text-center py-12">
@@ -299,12 +258,12 @@ export default function EventsPage() {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-2xl font-semibold">
-                {events.length} Event{events.length !== 1 ? 's' : ''} Found
+                {filteredEvents.length} Event{filteredEvents.length !== 1 ? 's' : ''} Found
               </h2>
             </div>
             
             <div className="grid gap-6">
-              {events.map((event) => (
+              {filteredEvents.map((event) => (
                 <Card key={event.id} className="hover:shadow-lg transition-all duration-200 cursor-pointer group">
                   <Link href={`/events/${event.id}`}>
                     <CardContent className="p-6">

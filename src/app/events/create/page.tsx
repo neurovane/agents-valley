@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from 'sonner'
 import { Calendar, MapPin, Users, Upload, Tag, Plus } from 'lucide-react'
+import { handleError } from '@/lib/error-handler'
 
 const CATEGORIES = [
   'Workshop',
@@ -76,17 +77,32 @@ export default function CreateEventPage() {
     setLoading(true)
 
     try {
-      // Parse tags from comma-separated string
-      const tagsArray = formData.tags
-        .split(',')
-        .map(tag => tag.trim())
-        .filter(tag => tag.length > 0)
-
       // Validate required fields
-      if (!formData.title || !formData.description || !formData.event_type || 
-          !formData.start_date || !formData.end_date || !formData.category) {
-        toast.error('Please fill in all required fields')
-        return
+      if (!formData.title.trim()) {
+        throw new Error('Event title is required')
+      }
+      if (!formData.description.trim()) {
+        throw new Error('Description is required')
+      }
+      if (!formData.event_type) {
+        throw new Error('Event type is required')
+      }
+      if (!formData.start_date) {
+        throw new Error('Start date is required')
+      }
+      if (!formData.end_date) {
+        throw new Error('End date is required')
+      }
+      if (!formData.category) {
+        throw new Error('Category is required')
+      }
+
+      // Validate lengths
+      if (formData.title.length < 5) {
+        throw new Error('Event title must be at least 5 characters')
+      }
+      if (formData.description.length < 20) {
+        throw new Error('Description must be at least 20 characters')
       }
 
       // Validate dates
@@ -94,44 +110,46 @@ export default function CreateEventPage() {
       const endDate = new Date(formData.end_date)
       
       if (startDate >= endDate) {
-        toast.error('End date must be after start date')
-        return
+        throw new Error('End date must be after start date')
       }
 
       if (startDate < new Date()) {
-        toast.error('Start date cannot be in the past')
-        return
+        throw new Error('Start date cannot be in the past')
       }
 
       // Validate event type specific fields
-      if (formData.event_type === 'in-person' && !formData.location) {
-        toast.error('Location is required for in-person events')
-        return
+      if (formData.event_type === 'in-person' && !formData.location?.trim()) {
+        throw new Error('Location is required for in-person events')
       }
 
-      if (formData.event_type === 'online' && !formData.event_url) {
-        toast.error('Event URL is required for online events')
-        return
+      if (formData.event_type === 'online' && !formData.event_url?.trim()) {
+        throw new Error('Event URL is required for online events')
       }
+
+      // Parse tags from comma-separated string
+      const tagsArray = formData.tags
+        .split(',')
+        .map(tag => tag.trim())
+        .filter(tag => tag.length > 0)
 
       const { data, error } = await supabase
         .from('events')
         .insert({
-          title: formData.title,
-          description: formData.description,
+          title: formData.title.trim(),
+          description: formData.description.trim(),
           event_type: formData.event_type,
-          location: formData.location || null,
-          event_url: formData.event_url || null,
+          location: formData.location?.trim() || null,
+          event_url: formData.event_url?.trim() || null,
           start_date: formData.start_date,
           end_date: formData.end_date,
           max_attendees: formData.max_attendees ? parseInt(formData.max_attendees) : null,
           category: formData.category,
           tags: tagsArray,
-          thumbnail_url: formData.thumbnail_url || null,
+          thumbnail_url: formData.thumbnail_url?.trim() || null,
           organizer_id: user.id,
           registration_deadline: formData.registration_deadline || null,
-          requirements: formData.requirements || null,
-          agenda: formData.agenda || null,
+          requirements: formData.requirements?.trim() || null,
+          agenda: formData.agenda?.trim() || null,
           is_featured: formData.is_featured
         })
         .select()
@@ -144,8 +162,8 @@ export default function CreateEventPage() {
       toast.success('Event created successfully!')
       router.push(`/events/${data.id}`)
     } catch (error: unknown) {
-      console.error('Error creating event:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to create event')
+      const errorMessage = handleError(error, 'Error creating event', 'Failed to create event')
+      toast.error(errorMessage)
     } finally {
       setLoading(false)
     }

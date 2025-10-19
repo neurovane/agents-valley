@@ -42,3 +42,5 @@ NEXT_PUBLIC_APP_NAME=AgentsValley
 - After adding variables, you may need to redeploy your application
 - Never commit actual credentials to your repository
 - Use different Supabase projects for development and production if needed
+
+

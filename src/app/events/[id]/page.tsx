@@ -1,10 +1,9 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
-import { createClient } from '@/lib/supabase-client'
-import { Event, EventAttendee } from '@/lib/supabase'
+import { useEvent, useEventAttendees, useEventRegistrationStatus, useRegisterEvent, useDeleteEvent } from '@/hooks/useEvents'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -21,79 +20,45 @@ import {
   AlertCircle,
   Globe,
   Building,
-  Link as LinkIcon
+  Link as LinkIcon,
+  Edit,
+  Trash2,
+  ArrowLeft
 } from 'lucide-react'
-import { useSupabaseData } from '@/hooks/useSupabaseData'
 import { toast } from 'sonner'
+import { handleError } from '@/lib/error-handler'
 import Link from 'next/link'
 import Image from 'next/image'
 
 export default function EventDetailPage() {
   const params = useParams()
+  const router = useRouter()
   const { user } = useAuth()
-  const [isRegistered, setIsRegistered] = useState(false)
-  const [registrationLoading, setRegistrationLoading] = useState(false)
-  const supabase = createClient()
+  const eventId = Array.isArray(params.id) ? params.id[0] : (params.id as string)
 
-  const eventId = params.id as string
+  // Fetch event data
+  const { data: event, isLoading: loading, error: eventError } = useEvent(eventId)
+  
+  // Fetch attendees
+  const { data: attendees = [], isLoading: attendeesLoading, error: attendeesError } = useEventAttendees(eventId)
+  
+  // Check registration status
+  const { data: isRegistered = false } = useEventRegistrationStatus(eventId)
+  
+  // Register mutation
+  const registerMutation = useRegisterEvent()
+  
+  // Delete mutation
+  const deleteMutation = useDeleteEvent()
 
-  const fetchEvent = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('events')
-      .select(`
-        *,
-        organizer:profiles(*)
-      `)
-      .eq('id', eventId)
-      .single()
-
-    return { data, error }
-  }, [supabase, eventId])
-
-  const fetchAttendees = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('event_attendees')
-      .select(`
-        *,
-        user:profiles(*)
-      `)
-      .eq('event_id', eventId)
-      .order('registered_at', { ascending: false })
-
-    return { data: data || [], error }
-  }, [supabase, eventId])
-
-  const { data: event, loading: eventLoading, error: eventError, refetch: refetchEvent } = useSupabaseData<Event>(
-    `event-${eventId}`,
-    fetchEvent,
-    [eventId],
-    { 
-      retries: 3, 
-      retryDelay: 1000,
-      cacheTime: 5 * 60 * 1000,
-      staleTime: 30 * 1000
-    }
-  )
-
-  const { data: attendees, loading: attendeesLoading, error: attendeesError, refetch: refetchAttendees } = useSupabaseData<EventAttendee[]>(
-    `event-attendees-${eventId}`,
-    fetchAttendees,
-    [eventId],
-    { 
-      retries: 3, 
-      retryDelay: 1000,
-      cacheTime: 5 * 60 * 1000,
-      staleTime: 30 * 1000
-    }
-  )
-
-  // Check if user is registered
+  // Redirect if event not found
   useEffect(() => {
-    if (user && attendees) {
-      const userRegistration = attendees.find(attendee => attendee.user_id === user.id)
-      setIsRegistered(!!userRegistration)
+    if (eventError) {
+      toast.error('Event not found')
+      router.push('/events')
     }
-  }, [user, attendees])
+  }, [eventError, router])
+
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
@@ -112,67 +77,66 @@ export default function EventDetailPage() {
     return date.toLocaleTimeString('en-US', {
       hour: '2-digit',
       minute: '2-digit'
+    }    )
+  }
+
+  const handleDelete = async () => {
+    if (!event || !user) return
+    
+    if (!confirm('Are you sure you want to delete this event? This action cannot be undone.')) {
+      return
+    }
+
+    deleteMutation.mutate(event.id, {
+      onSuccess: () => {
+        toast.success('Event deleted successfully')
+        router.push('/events')
+      },
+      onError: (error) => {
+        const errorMessage = handleError(error, 'Error deleting event', 'Failed to delete event')
+        toast.error(errorMessage)
+      },
     })
   }
+
+  const isOwner = user && event && event.organizer_id === user.id
 
   const isEventUpcoming = (startDate: string) => {
     return new Date(startDate) > new Date()
   }
 
-  const isRegistrationOpen = (event: Event) => {
-    if (!isEventUpcoming(event.start_date)) return false
-    if (event.registration_deadline) {
-      return new Date(event.registration_deadline) > new Date()
+  const isRegistrationOpen = (eventData: typeof event) => {
+    if (!eventData || !isEventUpcoming(eventData.start_date)) return false
+    if (eventData.registration_deadline) {
+      return new Date(eventData.registration_deadline) > new Date()
     }
     return true
   }
 
-  const isEventFull = (event: Event) => {
-    if (!event.max_attendees) return false
-    return event.current_attendees >= event.max_attendees
+  const isEventFull = (eventData: typeof event) => {
+    if (!eventData) return false
+    if (!eventData.max_attendees) return false
+    return eventData.current_attendees >= eventData.max_attendees
   }
 
   const handleRegister = async () => {
-    if (!user || !event) return
-
-    setRegistrationLoading(true)
-    try {
-      if (isRegistered) {
-        // Unregister
-        const { error } = await supabase
-          .from('event_attendees')
-          .delete()
-          .eq('event_id', event.id)
-          .eq('user_id', user.id)
-
-        if (error) throw error
-
-        setIsRegistered(false)
-        toast.success('Successfully unregistered from event')
-      } else {
-        // Register
-        const { error } = await supabase
-          .from('event_attendees')
-          .insert({
-            event_id: event.id,
-            user_id: user.id
-          })
-
-        if (error) throw error
-
-        setIsRegistered(true)
-        toast.success('Successfully registered for event')
-      }
-
-      // Refresh data
-      refetchEvent()
-      refetchAttendees()
-    } catch (error: unknown) {
-      console.error('Error toggling registration:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to update registration')
-    } finally {
-      setRegistrationLoading(false)
+    if (!user || !event) {
+      if (!user) toast.error('Please sign in to register')
+      return
     }
+
+    registerMutation.mutate(
+      { eventId: event.id, isRegistered },
+      {
+        onSuccess: () => {
+          toast.success(isRegistered ? 'Successfully unregistered from event' : 'Successfully registered for event')
+        },
+        onError: (error) => {
+          const errorMessage = handleError(error, 'Error updating registration', 'Failed to update registration')
+          toast.error(errorMessage)
+        },
+      }
+    )
   }
 
   const getEventTypeIcon = (eventType: string) => {
@@ -201,7 +165,7 @@ export default function EventDetailPage() {
     }
   }
 
-  if (eventLoading) {
+  if (loading) {
     return (
       <div className="container mx-auto py-8">
         <div className="animate-pulse space-y-6">
@@ -240,6 +204,39 @@ export default function EventDetailPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50">
       <div className="container mx-auto px-4 py-8 max-w-4xl">
+        {/* Back Button & Actions */}
+        <div className="flex items-center justify-between mb-6">
+          <Button 
+            variant="ghost" 
+            onClick={() => router.back()}
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back
+          </Button>
+          
+          {isOwner && (
+            <div className="flex gap-2">
+              <Button 
+                variant="outline"
+                asChild
+              >
+                <Link href={`/events/${event.id}/edit`}>
+                  <Edit className="h-4 w-4 mr-2" />
+                  Edit
+                </Link>
+              </Button>
+              <Button 
+                variant="destructive"
+                onClick={handleDelete}
+                disabled={deleteMutation.isPending}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+              </Button>
+            </div>
+          )}
+        </div>
+
         {/* Event Header */}
         <Card className="mb-6">
           <CardContent className="p-6">
@@ -362,11 +359,11 @@ export default function EventDetailPage() {
                 ) : (
                   <Button
                     onClick={handleRegister}
-                    disabled={registrationLoading}
+                      disabled={registerMutation.isPending}
                     variant={isRegistered ? "outline" : "default"}
                     className="min-w-32"
                   >
-                    {registrationLoading ? (
+                    {registerMutation.isPending ? (
                       'Loading...'
                     ) : isRegistered ? (
                       <>

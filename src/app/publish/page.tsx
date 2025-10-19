@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { createClient } from '@/lib/supabase-client'
@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { toast } from 'sonner'
 import { Upload, Bot, Server, Link as LinkIcon, Tag, FileText, Plus } from 'lucide-react'
+import { handleError } from '@/lib/error-handler'
 
 const CATEGORIES = [
   'Productivity',
@@ -37,7 +38,6 @@ export default function PublishPage() {
     description: '',
     category: '',
     tags: '',
-    mcp_server_url: '',
     demo_link: '',
     thumbnail_url: '',
   })
@@ -71,6 +71,23 @@ export default function PublishPage() {
     setLoading(true)
 
     try {
+      // Validate required fields
+      if (!agentFormData.name.trim()) {
+        throw new Error('Agent name is required')
+      }
+      if (!agentFormData.description.trim()) {
+        throw new Error('Description is required')
+      }
+      if (!agentFormData.category) {
+        throw new Error('Category is required')
+      }
+      if (agentFormData.name.length < 3) {
+        throw new Error('Agent name must be at least 3 characters')
+      }
+      if (agentFormData.description.length < 10) {
+        throw new Error('Description must be at least 10 characters')
+      }
+
       // Parse tags from comma-separated string
       const tagsArray = agentFormData.tags
         .split(',')
@@ -80,13 +97,12 @@ export default function PublishPage() {
       const { data, error } = await supabase
         .from('agents')
         .insert({
-          name: agentFormData.name,
-          description: agentFormData.description,
+          name: agentFormData.name.trim(),
+          description: agentFormData.description.trim(),
           category: agentFormData.category,
           tags: tagsArray,
-          mcp_server_url: agentFormData.mcp_server_url || null,
-          demo_link: agentFormData.demo_link || null,
-          thumbnail_url: agentFormData.thumbnail_url || null,
+          demo_link: agentFormData.demo_link?.trim() || null,
+          thumbnail_url: agentFormData.thumbnail_url?.trim() || null,
           publisher_id: user.id,
         })
         .select()
@@ -99,8 +115,8 @@ export default function PublishPage() {
       toast.success('Agent published successfully!')
       router.push(`/agents/${data.id}`)
     } catch (error: unknown) {
-      console.error('Error publishing agent:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to publish agent')
+      const errorMessage = handleError(error, 'Error publishing agent', 'Failed to publish agent')
+      toast.error(errorMessage)
     } finally {
       setLoading(false)
     }
@@ -111,6 +127,26 @@ export default function PublishPage() {
     setLoading(true)
 
     try {
+      // Validate required fields
+      if (!mcpFormData.name.trim()) {
+        throw new Error('MCP Server name is required')
+      }
+      if (!mcpFormData.description.trim()) {
+        throw new Error('Description is required')
+      }
+      if (!mcpFormData.category) {
+        throw new Error('Category is required')
+      }
+      if (!mcpFormData.server_url.trim()) {
+        throw new Error('Server URL is required')
+      }
+      if (mcpFormData.name.length < 3) {
+        throw new Error('MCP Server name must be at least 3 characters')
+      }
+      if (mcpFormData.description.length < 10) {
+        throw new Error('Description must be at least 10 characters')
+      }
+
       // Parse tags from comma-separated string
       const tagsArray = mcpFormData.tags
         .split(',')
@@ -120,13 +156,13 @@ export default function PublishPage() {
       const { data, error } = await supabase
         .from('mcp_servers')
         .insert({
-          name: mcpFormData.name,
-          description: mcpFormData.description,
+          name: mcpFormData.name.trim(),
+          description: mcpFormData.description.trim(),
           category: mcpFormData.category,
           tags: tagsArray,
-          server_url: mcpFormData.server_url,
-          documentation_url: mcpFormData.documentation_url || null,
-          thumbnail_url: mcpFormData.thumbnail_url || null,
+          server_url: mcpFormData.server_url.trim(),
+          documentation_url: mcpFormData.documentation_url?.trim() || null,
+          thumbnail_url: mcpFormData.thumbnail_url?.trim() || null,
           publisher_id: user.id,
         })
         .select()
@@ -139,8 +175,8 @@ export default function PublishPage() {
       toast.success('MCP Server published successfully!')
       router.push(`/mcp-servers/${data.id}`)
     } catch (error: unknown) {
-      console.error('Error publishing MCP server:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to publish MCP server')
+      const errorMessage = handleError(error, 'Error publishing MCP server', 'Failed to publish MCP server')
+      toast.error(errorMessage)
     } finally {
       setLoading(false)
     }
@@ -270,23 +306,6 @@ export default function PublishPage() {
               />
               <p className="text-xs text-muted-foreground">
                 Optional: URL to an image representing your agent
-              </p>
-            </div>
-
-            {/* MCP Server URL */}
-            <div className="space-y-2">
-              <label htmlFor="mcp_server_url" className="text-sm font-medium flex items-center">
-                <Bot className="h-4 w-4 mr-1" />
-                MCP Server URL
-              </label>
-              <Input
-                id="mcp_server_url"
-                placeholder="https://your-mcp-server.com"
-                value={agentFormData.mcp_server_url}
-                onChange={(e) => handleAgentInputChange('mcp_server_url', e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">
-                Optional: URL to your MCP server endpoint
               </p>
             </div>
 

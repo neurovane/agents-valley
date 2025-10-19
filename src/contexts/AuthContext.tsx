@@ -4,6 +4,8 @@ import { createContext, useContext, useEffect, useState } from 'react'
 import { User } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase-client'
 import { Profile } from '@/lib/supabase'
+import { clearSupabaseCache } from '@/hooks/useSupabaseData'
+import { useLoading } from '@/contexts/LoadingContext'
 
 interface AuthContextType {
   user: User | null
@@ -21,6 +23,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
+  const { forceReset } = useLoading()
 
   useEffect(() => {
     let mounted = true
@@ -58,6 +61,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!mounted) return
         
         try {
+          // Only clear cache on meaningful auth boundary changes
+          // Do NOT clear on TOKEN_REFRESHED to avoid tab-focus churn
+          if (event === 'SIGNED_OUT') {
+            console.log('Auth event:', event, 'Clearing cache')
+            clearSupabaseCache()
+          }
+          
           setUser(session?.user ?? null)
           
           if (session?.user) {
@@ -122,7 +132,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const signOut = async () => {
-    await supabase.auth.signOut()
+    try {
+      // Clear cache before signing out
+      clearSupabaseCache()
+      
+      // Force clear all loading states
+      forceReset()
+      setLoading(false)
+      setUser(null)
+      setProfile(null)
+      
+      // Sign out from Supabase
+      await supabase.auth.signOut()
+    } catch (error) {
+      console.error('Error during sign out:', error)
+      // Force clear states even if signOut fails
+      forceReset()
+      setLoading(false)
+      setUser(null)
+      setProfile(null)
+    }
   }
 
   const value = {
